@@ -1,0 +1,105 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Preliminary Report</title>
+<style>
+@page { size: Letter; margin: 0.6in 0.65in; }
+body { font-family: "Times New Roman", Times, serif; font-size: 10.5pt; line-height: 1.28; color: #000; margin: 0; }
+h1 { font-size: 15pt; text-align: center; margin: 0 0 4pt; }
+.meta { text-align: center; font-size: 10pt; margin-bottom: 8pt; }
+h2 { font-size: 11.5pt; margin: 9pt 0 3pt; border-bottom: 0.6pt solid #000; }
+p { margin: 0 0 4pt; text-align: justify; }
+ul { margin: 0 0 4pt 0; padding-left: 15pt; }
+li { margin: 0 0 2pt; text-align: justify; }
+table { border-collapse: collapse; font-size: 9.5pt; margin: 3pt 0 4pt; }
+td, th { border: 0.5pt solid #444; padding: 1.5pt 5pt; text-align: left; }
+th { background: #eee; }
+.eq { text-align: center; margin: 3pt 0 4pt; }
+a { color: #000; }
+</style></head><body>
+
+<h1>Does Trackability-Based Motion Curation Help a Small Biped?<br>Preliminary Report</h1>
+<div class="meta">ROB6323: Reinforcement Learning and Optimal Control for Autonomous Systems<br>
+Dhawal Kabra, Kanad Patel, Neer Patel, Pierrick Rugery<br>
+Repository: <a href="https://github.com/dk5426/rob6323-duck-motion-curation">github.com/dk5426/rob6323-duck-motion-curation</a></div>
+
+<h2>1. Project description</h2>
+<p>A common way to give a legged robot many skills is to train one RL policy to track a library of reference motion
+clips. Real libraries contain bad clips: motions the robot cannot physically perform, and recordings with noise,
+glitches or sliding feet. ExBody2 proposed <i>trackability-based curation</i>: train a policy on every clip, measure how
+well it tracks each one, and drop the worst clips before training the final policy. The tracking error of a clip,
+however, mixes two things: how hard its motion type is, and whether the clip is broken. A clean but difficult walking
+clip can score worse than a broken bow, so plain curation may throw away exactly the hard, useful motions.</p>
+<p>We propose <b>type-normalised curation</b>: each clip's score is divided by the typical score of clean clips of its own
+motion type, so a clip is judged only against its peers. Our goal is to show, in a controlled and pre-registered study
+on the Open Duck Mini v2 biped in simulation, that type-normalised curation improves tracking over training on the full
+library, over random removal and over plain curation, and to test whether this holds across RL algorithms.</p>
+
+<h2>2. Tools</h2>
+<ul>
+<li><b>Simulator:</b> MuJoCo with its JAX version MJX, through MuJoCo Playground, for thousands of parallel environments
+on one GPU.</li>
+<li><b>Robot and existing code:</b> Open_Duck_Playground (Open Duck Mini v2 model, a 14-joint, roughly 40 cm tall open-source
+biped; its motion-tracking environment; and a Placo-based walk generator for reference gaits). We extend the
+environment with a per-clip sampler, a reference feed-forward action and evaluation tools.</li>
+<li><b>RL libraries:</b> Brax PPO and SAC; FastTD3; our own ARS and DAgger implementations.</li>
+<li><b>Motion data:</b> our own clip generator (inverse kinematics and keyframing on the robot model) plus physics checks
+(Section 5).</li>
+</ul>
+
+<h2>3. Algorithms</h2>
+<ul>
+<li><b>Tracking policy.</b> The policy observes proprioception (joint angles and velocities, IMU, previous action) and
+the reference for the next frames. Its action is a residual on the reference: the joint target is
+q<sub>ref</sub>(t+1) + 0.25&nbsp;a, rate-limited to the servos' speed. The reward sums imitation terms (joints,
+keypoints, base pose and velocity) and regularisers. Training uses PPO (200M steps).</li>
+<li><b>Tracking error</b> per clip, averaged over frames and rollouts (3 per frame after a fall):
+<div class="eq">e = joint error / 0.10 rad + keypoint error / 0.02 m<br>(scoring adds base position / 0.05 m + heading / 0.2 rad + tilt / 0.1 rad)</div></li>
+<li><b>Selectors</b> that keep a fraction f of the training clips:
+<i>full</i> (keep all); <i>random</i>; <i>kinematic</i> (keep clips passing a joint-limit and speed check);
+<i>curated</i> (ExBody2: three scoring policies trained on all clips, keep the lowest ensemble error); and
+<i>type-normalised</i> (ours): s(c) = e(c) / median{ e(v) : v a clean validation clip of the same type as c },
+keep the lowest s.</li>
+<li><b>Other learners</b> (Phase 2): PPO without the feed-forward, SAC, FastTD3, ARS and DAgger, to see whether the
+benefit depends on the algorithm. <b>Alternatives to hard filtering</b> (Phase 3): soft weighting of clips by score,
+failure-prioritised sampling, a difficulty curriculum, adaptive tracking tolerance, and repairing broken clips.</li>
+</ul>
+
+<h2>4. Planned work, experiments and expected results</h2>
+<ul>
+<li><b>Dose check.</b> Train on the full library and on its clean clips only; the broken clips must raise validation
+error by at least 0.03, otherwise they are made more severe before the study.</li>
+<li><b>Phase 1 (main experiment).</b> PPO, 3 seeds per condition, keep-fractions 55, 65, 75 and 85% (main: 55%).
+Evaluation on held-out clean test clips (unseen parameter values, never used for any choice), 10 rollouts each, under
+nominal conditions and under pushes (0.3 and 0.6 m/s) and reduced friction. Statistics: differences in mean test error
+with 97.5% bootstrap confidence intervals over motion sources (Bonferroni over two hypotheses), plus a per-type
+completion check. Hypotheses: <b>H1</b> type-normalised curation beats full and random; <b>H2</b> plain curation beats
+full and random.</li>
+<li><b>Phase 2.</b> The best fraction for type-normalised curation (chosen on validation) with the other learners at
+equal wall-clock budget. <b>Phase 3.</b> The alternatives above against full and type-normalised curation.</li>
+<li><b>Expected results.</b> Plain curation removes most broken clips but also the clean clips of hard types (walking,
+turning, side steps), so tracking of those types degrades and H2 fails. Type-normalised curation keeps clean clips of
+every type while still removing broken ones, so H1 holds: lower test error and fewer falls than full and random.
+Impossible clips (balance, joint-limit, speed, take-off) should be easier to detect than corrupted ones (noise, glitches,
+foot skate), and off-policy learners (SAC, FastTD3), which replay bad data, should gain more from curation than PPO.
+All conditions, metrics, statistics and predictions are fixed in a pre-registration before training.</li>
+</ul>
+
+<h2>5. Preliminary work: the motion dataset</h2>
+<p>We built a 221-clip reference motion dataset for Open Duck Mini v2 (50 Hz, at most 4 s per clip), published with a
+GIF of every clip in the repository. It covers <b>14 motion types</b>: forward and backward walking, side steps, turning in
+place, walking while turning (Placo gaits), leg lifts (march, stomp, kick, tap), crouch, bow, sway, head motions, hop,
+dance, headbang and twist (keyframed with inverse kinematics). Every clean clip passes kinematic checks (joint limits,
+servo speed, feet on the ground when in contact) and is no more demanding than the generator's own walking gaits on
+servo lag and balance margin.</p>
+<table>
+<tr><th>split</th><th>clips</th><th>content</th></tr>
+<tr><td>train</td><td>109</td><td>84 clean (6 per type) + 25 broken copies of clean train clips (22.9%)</td></tr>
+<tr><td>validation</td><td>42</td><td>3 clean per type; used only for choices (scoring, best fraction)</td></tr>
+<tr><td>test</td><td>70</td><td>5 clean per type; motion sources never seen in training</td></tr>
+</table>
+<p>The broken clips mimic real data problems and their labels are known by construction (used only for analysis, never
+by a selector). <b>Impossible</b> (each confirmed by a physics check in simulation): balance shove (the body is moved off
+its support; a static hold test fails), joint-limit violation, hops needing more take-off speed than the legs can give,
+time-compressed clips too fast for the servos, and one foot held up too long to balance. <b>Corrupted</b>: joint noise,
+short pose glitches, and a stance foot sliding while marked in contact.</p>
+
+</body></html>
