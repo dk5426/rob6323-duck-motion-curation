@@ -65,8 +65,9 @@ failure-prioritised sampling, a difficulty curriculum, adaptive tracking toleran
 
 <h2>4. Planned work, experiments and expected results</h2>
 <ul>
-<li><b>Dose check.</b> Train on the full library and on its clean clips only; the broken clips must raise validation
-error by at least 0.03, otherwise they are made more severe before the study.</li>
+<li><b>Dose check.</b> Before the study, we confirm the broken clips actually hurt: a policy trained on the full
+library must track the validation clips worse (by at least 0.03 in tracking error) than one trained on the clean clips
+only. Otherwise curation would have nothing to fix, so we would make the breaks more severe and check again.</li>
 <li><b>Phase 1 (main experiment).</b> PPO, 3 seeds per condition, keep-fractions 55, 65, 75 and 85% (main: 55%).
 Evaluation on held-out clean test clips (unseen parameter values, never used for any choice), 10 rollouts each, under
 nominal conditions and under pushes (0.3 and 0.6 m/s) and reduced friction. Statistics: differences in mean test error
